@@ -90,9 +90,9 @@ def read_update_config(config_path: str) -> dict:
         # Fallback default matching repo layout
         return {
             "github": {
-                "owner": "madoiscool",
-                "repo": "ltsteamplugin",
-                "asset_name": "ltsteamplugin.zip",
+                "owner": "I-am-Xoid",
+                "repo": "lightning",
+                "asset_name": "src.zip",
             }
         }
 
