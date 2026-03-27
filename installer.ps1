@@ -48,7 +48,7 @@ function Log {
 
     Write-Host [$Type] $Message -ForegroundColor $foreground -NoNewline:$NoNewline
 }
-Write-Host
+
 
 # To hide IEX blue box thing
 $ProgressPreference = 'SilentlyContinue'
@@ -267,7 +267,11 @@ Log "LOG" "Unzipping $name"
 try {      
     $zip = [System.IO.Compression.ZipFile]::OpenRead($subPath)
     foreach ($entry in $zip.Entries) {
-        $destinationPath = Join-Path $Path $entry.FullName
+        $entryName = $entry.FullName
+        if ($entryName.StartsWith("src/", [System.StringComparison]::OrdinalIgnoreCase)) {
+            $entryName = $entryName.Substring(4) # Remove "src/"
+        }
+        $destinationPath = Join-Path $Path $entryName
         
         if (-not $entry.FullName.EndsWith('/') -and -not $entry.FullName.EndsWith('\')) {
             $parentDir = Split-Path -Path $destinationPath -Parent
@@ -296,8 +300,30 @@ try {
 catch {
     write-host "Error: $($_.Exception.Message)"
     if ($zip) { $zip.Dispose() }
-    Log "ERR" "Extraction failed, trying normal way"
-    Expand-Archive -Path $subPath -DestinationPath $Path -Force
+    Log "ERR" "Custom extraction failed, trying fallback with temporary directory."
+
+    $tempExtractPath = Join-Path $env:TEMP "$name-temp-extract"
+    Remove-ItemIfExists $tempExtractPath
+    New-Item -ItemType Directory -Path $tempExtractPath -Force | Out-Null
+
+    try {
+        Expand-Archive -Path $subPath -DestinationPath $tempExtractPath -Force
+        
+        $sourcePath = Join-Path $tempExtractPath "src"
+        if (Test-Path $sourcePath) {
+            Get-ChildItem -Path $sourcePath -Force | Move-Item -Destination $Path -Force
+            Remove-Item $tempExtractPath -Recurse -Force
+            Log "OK" "Fallback extraction successful and 'src' folder moved."
+        } else {
+            Log "WARN" "Fallback extraction completed, but 'src' folder not found in temporary location. Plugin might be incorrectly structured."
+            # Clean up temp path anyway
+            Remove-Item $tempExtractPath -Recurse -Force
+        }
+    } catch {
+        Log "ERR" "Fallback extraction also failed: $($_.Exception.Message)"
+        # Clean up temp path if it exists
+        Remove-ItemIfExists $tempExtractPath
+    }
 }
 
 
@@ -332,6 +358,7 @@ if (-not (Test-Path $configPath)) {
         }
         general = @{
             checkForMillenniumUpdates = $false
+            theme = "space"
         }
     }
     New-Item -Path (Split-Path $configPath) -ItemType Directory -Force | Out-Null
@@ -350,6 +377,8 @@ else {
     _EnsureProperty $config "general" @{}
     _EnsureProperty $config "general.checkForMillenniumUpdates" $false
     $config.general.checkForMillenniumUpdates = $false
+    _EnsureProperty $config "general.theme" "space"
+    $config.general.theme = "space"
 
     _EnsureProperty $config "plugins" @{ enabledPlugins = @() }
     _EnsureProperty $config "plugins.enabledPlugins" @()
